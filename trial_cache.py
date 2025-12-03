@@ -1,6 +1,6 @@
 import jax
 import jax.numpy as jnp
-from gm.nn import _modules
+from gemma.gm.nn import _modules
 
 # 1) Build a tiny attention layer that uses local sliding
 attn = _modules.Attention(
