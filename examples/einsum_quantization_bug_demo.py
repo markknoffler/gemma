@@ -98,8 +98,10 @@ def demonstrate_simulate_quantized_einsum_bug() -> None:
     )
 
     # Initialize the module (Flax requires this)
+    # For einsum "BTD,NDH->BTNH": input is (B, T, D), kernel is (N, D, H)
+    # We'll use D=8 to match the kernel shape (4, 8, 16) where D=8
     key = jax.random.key(42)
-    dummy_input = jnp.ones((2, 10, 4))  # Batch=2, Seq=10, Dim=4
+    dummy_input = jnp.ones((2, 10, 8))  # Batch=2, Seq=10, Dim=8 (D dimension)
 
     # Initialize variables (einsum_str is already set in constructor, don't pass it again)
     variables = quantized_einsum.init(key, dummy_input)
