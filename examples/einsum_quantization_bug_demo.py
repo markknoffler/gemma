@@ -101,8 +101,8 @@ def demonstrate_simulate_quantized_einsum_bug() -> None:
     key = jax.random.key(42)
     dummy_input = jnp.ones((2, 10, 4))  # Batch=2, Seq=10, Dim=4
 
-    # Initialize variables
-    variables = quantized_einsum.init(key, dummy_input, einsum_str=einsum_equation)
+    # Initialize variables (einsum_str is already set in constructor, don't pass it again)
+    variables = quantized_einsum.init(key, dummy_input)
 
     print("Created SimulateQuantizedEinsum with:")
     print(f"  - wrapped.einsum_str = '{wrapped_einsum.einsum_str}'")
@@ -110,13 +110,12 @@ def demonstrate_simulate_quantized_einsum_bug() -> None:
     print()
 
     # Now call the module - this will trigger the quantization path
+    # einsum_str is already set in constructor, don't pass it again
     print("Calling quantized_einsum(...) to trigger quantization...")
     print()
 
     _captured_argument = None  # Reset before the call
-    output = quantized_einsum.apply(
-        variables, dummy_input, einsum_str=einsum_equation
-    )
+    output = quantized_einsum.apply(variables, dummy_input)
 
     print("=" * 70)
     print("BUG DEMONSTRATION RESULTS")
