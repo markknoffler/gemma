@@ -34,7 +34,17 @@ This script demonstrates the bug by:
 from __future__ import annotations
 
 import functools
+import os
+import sys
+from pathlib import Path
 from typing import Any
+
+# Ensure we import from the local code, not an installed package
+# Add the parent directory (gemma root) to Python path
+_script_dir = Path(__file__).parent
+_gemma_root = _script_dir.parent
+if str(_gemma_root) not in sys.path:
+  sys.path.insert(0, str(_gemma_root))
 
 import jax.numpy as jnp
 from flax import linen as nn
@@ -42,6 +52,14 @@ from flax import linen as nn
 from gemma.peft import _quantization
 from gemma.peft import _quantization_utils
 
+# Reload the module to ensure we're using the latest code
+import importlib
+importlib.reload(_quantization)
+
+# Print the code location to verify we're using local code
+print(f"Using _quantization from: {_quantization.__file__}")
+print(f"Expected location: {_gemma_root / 'gemma' / 'peft' / '_quantization.py'}")
+print()
 
 # Global variable to capture what argument was actually passed
 _captured_argument: str | None = None
