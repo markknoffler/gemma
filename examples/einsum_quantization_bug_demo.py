@@ -1,8 +1,9 @@
 """Demonstration of the SimulateQuantizedEinsum axis selection bug.
 
-This script does NOT fix anything; it just shows the discrepancy
-between what the code appears to intend and what it actually does
-in the current implementation.
+This script demonstrates that SimulateQuantizedEinsum.__call__ passes
+self.wrapped.name (the module name) to get_axis_to_reduce_from_einsum_str
+instead of the actual einsum_str, causing the pattern-specific axis
+selection logic to never execute.
 
 Context
 -------
@@ -14,7 +15,7 @@ quantization code calls::
         kernel,
         self.method,
         axis_to_reduce=get_axis_to_reduce_from_einsum_str(
-            einsum_str=self.wrapped.name,
+            einsum_str=self.wrapped.name,  # ← BUG: should be einsum_str
         ),
     )
 
@@ -23,66 +24,151 @@ However, `get_axis_to_reduce_from_einsum_str` is written to match on the
 Passing the module name (typically something like "einsum_0") means the
 matcher always falls through to the default case and returns ``None``.
 
-That makes the pattern-specific axis handling effectively dead code,
-and all einsums use the generic per-channel scaling path.
-
-This script demonstrates that discrepancy without running any model:
-
-* It shows that `get_axis_to_reduce_from_einsum_str` returns the
-  expected axes when passed a known einsum equation.
-* It also shows that if you pass something that looks like a realistic
-  Flax module name (what SimulateQuantizedEinsum currently does), you
-  always get ``None``.
-
-You should NOT run this in production; it is solely a debugging/demo
-helper for understanding the bug.
+This script demonstrates the bug by:
+1. Creating a spy that intercepts calls to get_axis_to_reduce_from_einsum_str
+2. Instantiating SimulateQuantizedEinsum with a real einsum equation
+3. Calling the module to trigger the quantization path
+4. Showing that the spy received self.wrapped.name instead of einsum_str
 """
 
 from __future__ import annotations
 
-from gemma.peft._quantization import get_axis_to_reduce_from_einsum_str
+import functools
+from typing import Any
+
+import jax.numpy as jnp
+from flax import linen as nn
+
+from gemma.peft import _quantization
+from gemma.peft import _quantization_utils
 
 
-def demonstrate_axis_selection_mismatch() -> None:
-  """Prints how axis selection behaves for equations vs names.
+# Global variable to capture what argument was actually passed
+_captured_argument: str | None = None
+_original_function = _quantization.get_axis_to_reduce_from_einsum_str
 
-  This mirrors the key logic in SimulateQuantizedEinsum without actually
-  instantiating the module or running any JAX/Flax code.
+
+def spy_get_axis_to_reduce_from_einsum_str(einsum_str: str) -> Any:
+  """Spy function that captures the argument and calls the original."""
+  global _captured_argument
+  _captured_argument = einsum_str
+  return _original_function(einsum_str)
+
+
+def demonstrate_simulate_quantized_einsum_bug() -> None:
+  """Demonstrates that SimulateQuantizedEinsum passes the wrong argument.
+
+  This function:
+  1. Patches get_axis_to_reduce_from_einsum_str with a spy
+  2. Creates a SimulateQuantizedEinsum instance with a known einsum equation
+  3. Calls the module to trigger quantization
+  4. Shows that the spy received self.wrapped.name instead of einsum_str
   """
+  global _captured_argument
 
-  # This is one of the equations explicitly handled in
-  # get_axis_to_reduce_from_einsum_str.
-  einsum_str = "BTD,NDH->BTNH"
+  # The einsum equation we'll use - this is one that get_axis_to_reduce_from_einsum_str
+  # knows how to handle and should return (1,) for
+  einsum_equation = "BTD,NDH->BTNH"
+  expected_axis = (1,)
 
-  # This string simulates what `self.wrapped.name` typically looks like
-  # inside a Flax module hierarchy: a simple identifier that does NOT
-  # match any of the patterns in get_axis_to_reduce_from_einsum_str.
-  module_name_like = "einsum_0"
-
-  axis_from_equation = get_axis_to_reduce_from_einsum_str(einsum_str)
-  axis_from_name = get_axis_to_reduce_from_einsum_str(module_name_like)
-
-  print("Einsum equation string:", einsum_str)
-  print("Axis to reduce when called with the equation:", axis_from_equation)
-
+  print("=" * 70)
+  print("Demonstrating SimulateQuantizedEinsum axis selection bug")
+  print("=" * 70)
+  print()
+  print(f"Einsum equation we'll use: {einsum_equation}")
+  print(f"Expected axis when called with equation: {expected_axis}")
   print()
 
-  print("Module name-like string (what SimulateQuantizedEinsum passes today):",
-        module_name_like)
-  print("Axis to reduce when called with the module name:", axis_from_name)
+  # Patch the function with our spy
+  _quantization.get_axis_to_reduce_from_einsum_str = spy_get_axis_to_reduce_from_einsum_str
+  _captured_argument = None
 
-  print()
-  print(
-      "Observation: get_axis_to_reduce_from_einsum_str knows how to choose",
-      "axes for the equation string, but SimulateQuantizedEinsum currently",
-      "passes the module name, so the matcher returns None and the",
-      "pattern-specific logic is never used.",
-  )
+  try:
+    # Create a wrapped Einsum module with the einsum equation
+    wrapped_einsum = nn.Einsum(
+        einsum_str=einsum_equation,
+        shape=(4, 8, 16),  # Example shape: (N, D, H)
+        name="attention_proj",  # This is what self.wrapped.name will be
+    )
+
+    # Create SimulateQuantizedEinsum wrapper
+    quantized_einsum = _quantization.SimulateQuantizedEinsum(
+        wrapped=wrapped_einsum,
+        method=_quantization_utils.QuantizationMethod.INT4,
+    )
+
+    # Initialize the module (Flax requires this)
+    key = jax.random.key(42)
+    dummy_input = jnp.ones((2, 10, 4))  # Batch=2, Seq=10, Dim=4
+
+    # Initialize variables
+    variables = quantized_einsum.init(key, dummy_input, einsum_str=einsum_equation)
+
+    print("Created SimulateQuantizedEinsum with:")
+    print(f"  - wrapped.einsum_str = '{wrapped_einsum.einsum_str}'")
+    print(f"  - wrapped.name = '{wrapped_einsum.name}'")
+    print()
+
+    # Now call the module - this will trigger the quantization path
+    print("Calling quantized_einsum(...) to trigger quantization...")
+    print()
+
+    _captured_argument = None  # Reset before the call
+    output = quantized_einsum.apply(
+        variables, dummy_input, einsum_str=einsum_equation
+    )
+
+    print("=" * 70)
+    print("BUG DEMONSTRATION RESULTS")
+    print("=" * 70)
+    print()
+    print(f"What get_axis_to_reduce_from_einsum_str was called with:")
+    print(f"  '{_captured_argument}'")
+    print()
+    print(f"What it SHOULD have been called with:")
+    print(f"  '{einsum_equation}'")
+    print()
+    print(f"What it WAS called with (self.wrapped.name):")
+    print(f"  '{wrapped_einsum.name}'")
+    print()
+
+    if _captured_argument == wrapped_einsum.name:
+      print("❌ BUG CONFIRMED: The function was called with self.wrapped.name")
+      print("   instead of the actual einsum_str!")
+      print()
+      print(f"   This means get_axis_to_reduce_from_einsum_str('{_captured_argument}')")
+      print("   returns None, and the pattern-specific axis selection is never used.")
+    elif _captured_argument == einsum_equation:
+      print("✅ CORRECT: The function was called with the einsum_str")
+      print("   (This would mean the bug is fixed)")
+    else:
+      print(f"⚠️  UNEXPECTED: The function was called with '{_captured_argument}'")
+      print("   (Neither the name nor the equation)")
+
+    print()
+    print("=" * 70)
+    print("Expected behavior vs actual behavior")
+    print("=" * 70)
+    print()
+    print("Expected:")
+    print(f"  get_axis_to_reduce_from_einsum_str('{einsum_equation}') -> {expected_axis}")
+    print()
+    print("Actual (due to bug):")
+    actual_result = _original_function(_captured_argument)
+    print(f"  get_axis_to_reduce_from_einsum_str('{_captured_argument}') -> {actual_result}")
+    print()
+    if actual_result is None:
+      print("  Because None is returned, the quantization falls back to")
+      print("  generic per-channel scaling along the last axis, instead of")
+      print("  using the pattern-specific axis selection logic.")
+
+  finally:
+    # Restore the original function
+    _quantization.get_axis_to_reduce_from_einsum_str = _original_function
 
 
 if __name__ == "__main__":
-  # NOTE: The user requested that we do NOT actually run any code as
-  # part of this contribution, so this block is intentionally only a
-  # demonstration entry point. It is left here so that other contributors
-  # can easily run it locally if they wish to inspect the behavior.
-  demonstrate_axis_selection_mismatch()
+  # Import jax here to avoid issues if jax is not available
+  import jax
+
+  demonstrate_simulate_quantized_einsum_bug()
