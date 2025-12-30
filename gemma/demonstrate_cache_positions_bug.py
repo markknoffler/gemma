@@ -41,14 +41,17 @@ seq_len = 64
 embed_dim = 128
 
 # Create dummy input data (simulating training scenario)
+# Use smaller values to ensure the bug triggers quickly
 rng = jax.random.PRNGKey(0)
 x = jnp.ones((batch_size, seq_len, embed_dim), dtype=jnp.float32)
 segment_pos = jnp.arange(seq_len)[None, :].repeat(batch_size, axis=0)
 # For training (cache=None), attn_mask shape is [batch, seq_len, seq_len]
+# This is the key: when cache is None, cache_size = seq_len
 attn_mask = jnp.ones((batch_size, seq_len, seq_len), dtype=jnp.bool_)
 
 # Initialize attention module parameters
 # NOTE: We pass cache=None during init to simulate training scenario
+# This is important: cache=None means we're in training mode
 params = attention.init(rng, x, segment_pos, None, attn_mask)
 
 print("=" * 80)
@@ -73,11 +76,15 @@ try:
     #
     # NOTE: We call attention.apply() directly with cache=None.
     # This bypasses all Sampler/tokenization code to avoid the padding bug.
-    cache = None  # This is None during training - triggers the bug!
+    cache = None  # CRITICAL: This must be None to trigger the bug!
     
     # Call the attention module with cache=None to trigger the bug
-    # The bug will occur at line 265 when it tries to use cache_positions
+    # The bug will occur at line 265 in _modules.py when it tries to use cache_positions
     # which was never defined because cache is None
+    # The exact line that fails:
+    #   cache_positions=cache_positions if cache else None
+    # Python evaluates 'cache_positions' first (before the if), causing NameError
+    print("Calling attention.apply() with cache=None...")
     cache_out, output = attention.apply(
         params,
         x,
