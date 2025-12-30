@@ -42,6 +42,8 @@ params = attention.init(rng, x, segment_pos, None, attn_mask)
 
 # This will trigger the bug: cache is None, but cache_positions is referenced
 # at line 265 in _modules.py when attn_type is LOCAL_SLIDING
+# The bug occurs because Python evaluates 'cache_positions' in the expression
+# 'cache_positions if cache else None' even when cache is None
 cache = None
 cache_out, output = attention.apply(
     params,
