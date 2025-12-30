@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
-"""Demonstration script for cache_positions undefined variable bug.
+"""Demonstration script for cache_positions undefined variable issue.
 
-This script demonstrates the bug where cache_positions is undefined when:
-- cache is None (typical during training)
-- attn_type is LOCAL_SLIDING (sliding window attention)
+NOTE: This is actually a code quality issue, not a runtime bug.
+Python's short-circuit evaluation prevents a runtime error, but the code
+is confusing and risky. The pylint warning (# pylint: disable=undefined-variable)
+indicates this is a known code quality issue.
 
-The bug occurs in gemma/gm/nn/_modules.py line 265 where cache_positions
-is referenced but only defined inside `if cache is not None:` block.
+The problematic code at line 265 in _modules.py:
+  cache_positions=cache_positions if cache else None
 
-Expected error: NameError: name 'cache_positions' is not defined
+When cache is None, Python short-circuits and returns None without
+evaluating cache_positions, so no runtime error occurs. However, this
+is poor code quality and could cause issues in certain scenarios.
 """
 
 import jax
@@ -40,10 +43,10 @@ attn_mask = jnp.ones((batch_size, seq_len, seq_len), dtype=jnp.bool_)
 # Initialize attention module parameters
 params = attention.init(rng, x, segment_pos, None, attn_mask)
 
-# This will trigger the bug: cache is None, but cache_positions is referenced
-# at line 265 in _modules.py when attn_type is LOCAL_SLIDING
-# The bug occurs because Python evaluates 'cache_positions' in the expression
-# 'cache_positions if cache else None' even when cache is None
+# This demonstrates the code quality issue: cache_positions is referenced
+# but only defined inside 'if cache is not None:' block. Python's
+# short-circuit evaluation prevents a runtime error, but this is
+# confusing and risky code.
 cache = None
 cache_out, output = attention.apply(
     params,
@@ -52,3 +55,8 @@ cache_out, output = attention.apply(
     cache,
     attn_mask,
 )
+
+print("Script completed successfully.")
+print("Note: No runtime error occurs due to Python's short-circuit evaluation.")
+print("However, this is a code quality issue - cache_positions should be")
+print("initialized before the conditional to avoid confusion and potential issues.")
