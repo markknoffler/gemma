@@ -9,11 +9,19 @@ The bug occurs in gemma/gm/nn/_modules.py line 265 where cache_positions
 is referenced but only defined inside `if cache is not None:` block.
 
 Expected error: NameError: name 'cache_positions' is not defined
+
+NOTE: This script directly calls the Attention module and does NOT use
+any Sampler, tokenization, or padding code paths to avoid triggering
+other unrelated bugs (e.g., the pad_length tuple bug).
 """
 
 import jax
 import jax.numpy as jnp
 from gemma.gm.nn import _modules
+
+# IMPORTANT: We only import and use the Attention module directly.
+# We do NOT use any Sampler, tokenizer, or data processing code that
+# might trigger the padding bug (pad_length tuple issue).
 
 # Create an Attention module with LOCAL_SLIDING attention type
 # This simulates a model configuration that uses sliding window attention
@@ -60,12 +68,15 @@ try:
     # 2. But it's used at line 265: cache_positions=cache_positions if cache else None
     # 3. When cache is None, Python tries to evaluate 'cache_positions' first,
     #    but it was never defined, causing NameError
+    #
+    # NOTE: We call attention.apply() directly with cache=None.
+    # This bypasses all Sampler/tokenization code to avoid the padding bug.
     cache = None  # This is None during training - triggers the bug!
     output = attention.apply(
         params,
         x,
         segment_pos,
-        cache,  # None - this triggers the bug!
+        cache,  # None - this triggers the cache_positions bug!
         attn_mask=attn_mask,
     )
     print("ERROR: Expected NameError but forward pass succeeded!")
