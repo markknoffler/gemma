@@ -136,12 +136,16 @@ def make_seq2seq_fields(
   Returns:
     The input, target and mask, all of length `prompt_len + response_len - 1`.
   """
-  # Validate inputs: prompt cannot be empty.
+  # Handle empty prompt: issue warning and use a default BOS token (2) as fallback.
   if len(prompt) == 0:
-    raise ValueError(
-        'prompt cannot be empty. The prompt must contain at least one token. '
-        'Empty prompts are not supported for sequence-to-sequence training.'
+    warnings.warn(
+        'Empty prompt provided. Using default BOS token (2) as prompt. '
+        'Empty prompts are not recommended for sequence-to-sequence training.',
+        UserWarning,
+        stacklevel=2,
     )
+    # Use BOS token (2) as a default prompt token for seq2seq compatibility.
+    prompt = np.array([2], dtype=np.int32)
   
   # Concatenate the prompt and response tokens.
   sequence = np.concatenate([prompt, response])
