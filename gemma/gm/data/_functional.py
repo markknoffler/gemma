@@ -134,6 +134,13 @@ def make_seq2seq_fields(
   Returns:
     The input, target and mask, all of length `prompt_len + response_len - 1`.
   """
+  # Validate inputs: prompt cannot be empty.
+  if len(prompt) == 0:
+    raise ValueError(
+        'prompt cannot be empty. The prompt must contain at least one token. '
+        'Empty prompts are not supported for sequence-to-sequence training.'
+    )
+  
   # Concatenate the prompt and response tokens.
   sequence = np.concatenate([prompt, response])
 
