@@ -14,6 +14,8 @@
 
 """Functional version of the `gm.data` transforms."""
 
+import warnings
+
 from etils import enp
 import flax
 import jax
