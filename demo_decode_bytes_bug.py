@@ -121,7 +121,7 @@ def main():
         print(f"✓ Decoded result: {result!r}")
         print(f"  Starts with: {result[:30]!r}")
         print(f"  Ends with: {result[-20:]!r}")
-        print(f"  Contains replacement chars in middle: {result.count('\ufffd')} instances")
+        print(f"  Contains replacement chars in middle: {result.count(REPLACEMENT_CHAR)} instances")
 
         if w:
             print(f"  ⚠ Warning: {w[0].message}")
