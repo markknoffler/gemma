@@ -17,6 +17,15 @@ Run:
 
 from __future__ import annotations
 
+# IMPORTANT: ensure we import the local checkout, not an installed `gemma`
+# package from site-packages.
+import os
+import sys
+
+_REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if _REPO_ROOT not in sys.path:
+  sys.path.insert(0, _REPO_ROOT)
+
 from gemma.gm.tools import _calculator
 from gemma.gm.tools import _manager as _manager_lib
 
@@ -36,10 +45,10 @@ Here is the JSON you requested:
 Thanks!
 """
 
-  # This line crashes with KeyError('tool_name') in maybe_execute_tool().
-  # It happens because the tool-call parser greedily extracts JSON from the
-  # output, and the manager assumes the parsed JSON dict is a tool call.
-  manager.maybe_execute_tool(model_output)
+  # Before the fix, this crashed with KeyError('tool_name').
+  # After the fix, non-tool JSON is ignored and this returns None.
+  tool_out = manager.maybe_execute_tool(model_output)
+  assert tool_out is None, tool_out
 
 
 if __name__ == "__main__":
