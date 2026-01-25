@@ -80,7 +80,7 @@ class FileExplorer(_tools.Tool):
         '/root',
     ]
     # Also block home directory sensitive paths
-    home = epath.Path.home()
+    home = epath.Path(os.path.expanduser("~"))
     sensitive_home_paths = [
         home / '.ssh',
         home / '.bashrc',
