@@ -74,12 +74,18 @@ class OfflineToolSearch(_tools.Tool):
 
     tool_instructions = tool_instructions.join()
 
+    def _update_tools(tools: list[_tools.Tool]) -> list[_tools.Tool]:
+      """Register found tools without creating duplicates."""
+      existing_names = {t.name for t in tools}
+      new_tools = [t for t in found_tools if t.name not in existing_names]
+      return tools + new_tools
+
     return _tools.ToolOutput(
         text=(
             f'Found {len(found_tools)} tool(s) with the following specs:\n'
             f'{tool_instructions}'
         ),
-        update_tools=lambda tools: tools + found_tools,
+        update_tools=_update_tools,
     )
 
 
